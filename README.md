@@ -22,7 +22,7 @@ The code can also be deployed locally as follows:
 1. Clone the repo
 2. yarn
 3. node app.js
-4. Modify test.js to point to the local server at localhost:3001 by modifying baseURL in the code.
+4. Modify test.mjs to point to the local server at localhost:3001 by modifying baseURL in the code.
 
 ## Assumptions and Design
 
@@ -38,9 +38,9 @@ an in-memory db for example.
 2. Regarding the filters, at first this seems difficult since we don't appear to know if a string in a response is a 
 date or just a regular string. I realized however that we can just use the comparison operator
 and it will "do the right thing" whether it's a date, string or number, provided the JavaScript (string or number)
-is correct. In fact this make the filtering code very simple.  
+is correct. In fact this makes the filtering code very simple.  
 
-3. During testing, I tried to exercise some code by reducing the pageSize to 1 (from 150). The result
+3. During testing, I tried to exercise some code by reducing the pageSize (within getSubmissions) to 1 (from 150). The result
 was that I got HTTP 429 errors (too many requests) which were reported in the payload. When 
 I put the pageSize back to 150 the problem went away. With more time, I would like to 
 investigate this further. 
