@@ -2,6 +2,19 @@ const express = require("express");
 const app = express();
 const port = process.env.PORT || 3001;
 
+//routes:
+app.get("/:formId/filteredResponses", filteredResponses);
+
+const server = app.listen(port, () => console.log(`Listening on port ${port}!`));
+
+server.keepAliveTimeout = 120 * 1000;
+server.headersTimeout = 120 * 1000;
+
+
+/**
+  Helper function which is directly called by the route
+  and translates the call into a direct function call.
+**/
 async function filteredResponses(req, res){ 
 
   const result = await getSubmissions(req)
@@ -9,14 +22,27 @@ async function filteredResponses(req, res){
   res.type('json').send(result)
 }
 
-async function getSubmissions(req){ 
+/**
+Helper function which processes a (back-end) server request.
+  formId: the formId to hit.
+  request: an object whose properties are URL params for the request.
+**/
+async function processServerRequest(formId, request){ 
 
-  const formId = req.params.formId
+  var paramList = [] 
+  Object.keys(request).forEach(paramName => {
+    const paramValue = request[paramName]
+    paramList.push(`${paramName}=${paramValue}`)
+  })  
 
   const baseURL = 'https://api.fillout.com'
-  const url = `/v1/api/forms/${formId}/submissions`
+  var url = `/v1/api/forms/${formId}/submissions`
 
-  const response = await fetch(baseURL + url, {
+  if(paramList.length > 0){ 
+    url = url + '?' + paramList.join('&') 
+  }
+
+  const res = await fetch(baseURL + url, {
 
     headers : { 
       "Authorization" : "Bearer sk_prod_TfMbARhdgues5AuIosvvdAC9WsA5kXiZlW8HZPaRDlIbCpSpLsXBeZO7dCVZQwHAY3P4VSBPiiC33poZ1tdUj2ljOzdTCCOSpUZ_3912"
@@ -24,69 +50,128 @@ async function getSubmissions(req){
 
   })
   
-  const content = await response.json()
+  const content = await res.json()
   
   return content
 }
 
 /**
-async function main(){ 
-  console.log('Hello World')
-  
-  const baseURL = 'https://api.fillout.com'
-  const url = '/v1/api/forms/cLZojxk94ous/submissions'
-  
-  const response = await fetch(baseURL + url, {
+ Function which performs main business logic for the request: 
+   - get all the responses from the back-end ( maybe over the course of multiple requests to the back-end )
+   - filter the responses
+   - assemble the result object with the pageCount and totalResponses properties
+   - using offset and limit, select only the requested responses and add them to the result object
+   - return the result object
+**/
+async function getSubmissions(req){ 
 
-    headers : { 
-      "Authorization" : "Bearer sk_prod_TfMbARhdgues5AuIosvvdAC9WsA5kXiZlW8HZPaRDlIbCpSpLsXBeZO7dCVZQwHAY3P4VSBPiiC33poZ1tdUj2ljOzdTCCOSpUZ_3912"
-    }
 
+  //get responses from back-end: 
+  
+  const formId = req.params.formId
+  
+  const queryParamNames = ['afterDate', 'beforeDate', 'status', 'includeEditLink', 'editLink', 'sort']
+
+  var request = {}
+  queryParamNames.forEach(name => {
+    if(name in req.query)
+      request[name] = req.query[name]
   })
+
+  request.limit = 150
+
+  var res = await processServerRequest(formId, request)
+
+  const totalResponses = res.totalResponses
   
-  const content = await response.text()
+  var responses = res.responses
   
-  console.log(JSON.parse(content))
+  while(responses.length < totalResponses ){
+    request.offset = responses.length 
+    res = await processServerRequest(formId, request)
+    responses = responses.concat(res.responses)
+  }
+
+
+  //apply filters: 
+  
+  var filters = []
+  
+  if('filters' in req.query){ 
+    filters = JSON.parse( req.query.filters )
     
+    responses = applyFilters(responses, filters)
+  }
+  
+  
+  //start building result: 
+  
+  var result = {}
+  result.totalResponses = responses.length
+  
+  var limit = 150
+  if('limit' in req.query){ 
+    limit = req.query.limit - 0 
+  }
+  
+  result.pageCount = Math.ceil( responses.length / limit )
+
+  var offset = 0
+  if('offset' in req.query){ 
+    offset = req.query.offset - 0
+  }
+  
+  
+  //add the selected responses to the result object:
+  
+  result.responses = responses.slice(offset, offset + limit)
+  
+  
+  //return result:
+
+  return result
 }
 
-main()
-**/
-
-
-app.get("/:formId/filteredResponses", filteredResponses);
-
-const server = app.listen(port, () => console.log(`Example app listening on port ${port}!`));
-
-server.keepAliveTimeout = 120 * 1000;
-server.headersTimeout = 120 * 1000;
-
-
-
-
 /**
- TODO: 
- ----
-   - print "hello world" to the console on server start-up. - DONE!
-   - access api.fillout.com and print out sample data to the console. - DONE!
-   - implement a test end-point which calls the above method to get the data.
-   - test the end-point by calling the server from a test.js app
-   
-   
-   
- NOTES:
- -----  
-   - NOTE: There is no type information on the filter value so if the value is a 
-     string then we have to infer if it should be treated a date or a string. 
-     I chose to do this as follows: 
-       if condition is greater_than or less_than then assume it's a date
-       if condition is equals or does_not_equal then assume it's a string      
-   
-     That's just one approach. The ideal solution is to add the type. Failing that
-     we could infer the type by the formatting of the string - if it looks like 
-     a date then it's a date. However this is messy and involves building a 
-   
+ Apply the filters to the array of responses, 
+ thus returning only the responses which match.
 **/
+function applyFilters(responses, filters){ 
+  
+  responses = responses.filter(response => {
+
+    var bChoose = true
+  
+    filters.forEach(f => {
+      
+      const question = response.questions.find(q => q.id == f.id)
+        
+      if(!question || 
+          (f.condition == 'equals' && question.value != f.value)||
+          (f.condition == 'does_not_equal' && question.value == f.value)||
+          (f.condition == 'greater_than' && question.value <= f.value)||
+          (f.condition == 'less_than' && question.value >= f.value)
+        ){
+        bChoose = false
+      }
+      
+    }) 
+
+    return bChoose
+  
+  })
+
+  return responses
+}
+
+
+
+
+
+
+
+
+
 
 
 
