@@ -16,8 +16,8 @@ function test(name, fn){
 async function main(){ 
   
   //baseURL - switch over when ready to go live!!!
-  const baseURL = 'http://localhost:3001' //TEST
-  //const baseURL = 'https://fillout-ftbl.onrender.com' //LIVE!
+  //const baseURL = 'http://localhost:3001' //TEST
+  const baseURL = 'https://fillout-ftbl.onrender.com' //LIVE!
   
 //when filter applied, return just one record: 
 
